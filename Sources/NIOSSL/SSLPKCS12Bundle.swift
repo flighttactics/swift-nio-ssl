@@ -43,7 +43,7 @@ public struct NIOSSLPKCS12Bundle: Hashable {
     public let certificateChain: [NIOSSLCertificate]
 
     /// The ``NIOSSLPrivateKey`` object for the leaf certificate in the PKCS#12 bundle.
-    public let privateKey: NIOSSLPrivateKey
+    public let privateKey: NIOSSLPrivateKey?
 
     private init<Bytes: Collection>(ref: OpaquePointer, passphrase: Bytes?) throws where Bytes.Element == UInt8 {
         var pkey: OpaquePointer?/*<EVP_PKEY>*/ = nil
@@ -59,14 +59,20 @@ public struct NIOSSLPKCS12Bundle: Hashable {
 
         // Successfully parsed, let's unpack. The key and cert are mandatory,
         // the ca stack is not.
-        guard let actualCert = cert, let actualKey = pkey else {
-            fatalError("Failed to obtain cert and pkey from a PKC12 file")
-        }
+        // Not entirely true
+        let actualCert = cert
+        let actualKey = pkey
+//        guard let actualCert = cert, let actualKey = pkey else {
+//            fatalError("Failed to obtain cert and pkey from a PKC12 file")
+//        }
 
         let certStackSize = caCerts.map { CNIOBoringSSL_sk_X509_num($0) } ?? 0
         var certs = [NIOSSLCertificate]()
         certs.reserveCapacity(Int(certStackSize) + 1)
-        certs.append(NIOSSLCertificate.fromUnsafePointer(takingOwnership: actualCert))
+        if actualCert != nil {
+            certs.append(NIOSSLCertificate.fromUnsafePointer(takingOwnership: actualCert!))
+        }
+        
 
         for idx in 0..<certStackSize {
             guard let stackCertPtr = CNIOBoringSSL_sk_X509_value(caCerts, idx) else {
@@ -76,7 +82,12 @@ public struct NIOSSLPKCS12Bundle: Hashable {
         }
 
         self.certificateChain = certs
-        self.privateKey = NIOSSLPrivateKey.fromUnsafePointer(takingOwnership: actualKey)
+        if actualKey != nil {
+            self.privateKey = NIOSSLPrivateKey.fromUnsafePointer(takingOwnership: actualKey!)
+        } else {
+            self.privateKey = nil
+        }
+        
 
     }
 
